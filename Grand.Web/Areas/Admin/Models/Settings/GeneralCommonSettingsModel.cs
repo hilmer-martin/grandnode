@@ -209,6 +209,9 @@ namespace Grand.Web.Areas.Admin.Models.Settings
             [GrandResourceDisplayName("Admin.Configuration.Settings.GeneralCommon.CaptchaShowOnRegistrationPage")]
             public bool CaptchaShowOnRegistrationPage { get; set; }
 
+            [GrandResourceDisplayName("Admin.Configuration.Settings.GeneralCommon.CaptchaShowOnPasswordRecoveryPage")]
+            public bool CaptchaShowOnPasswordRecoveryPage { get; set; }
+
             [GrandResourceDisplayName("Admin.Configuration.Settings.GeneralCommon.CaptchaShowOnContactUsPage")]
             public bool CaptchaShowOnContactUsPage { get; set; }
 
@@ -282,9 +285,6 @@ namespace Grand.Web.Areas.Admin.Models.Settings
             [GrandResourceDisplayName("Admin.Configuration.Settings.GeneralCommon.UseImagesForLanguageSelection")]
             public bool UseImagesForLanguageSelection { get; set; }
 
-            [GrandResourceDisplayName("Admin.Configuration.Settings.GeneralCommon.SeoFriendlyUrlsForLanguagesEnabled")]
-            public bool SeoFriendlyUrlsForLanguagesEnabled { get; set; }
-
             [GrandResourceDisplayName("Admin.Configuration.Settings.GeneralCommon.AutomaticallyDetectLanguage")]
             public bool AutomaticallyDetectLanguage { get; set; }
 
@@ -293,9 +293,7 @@ namespace Grand.Web.Areas.Admin.Models.Settings
 
             [GrandResourceDisplayName("Admin.Configuration.Settings.GeneralCommon.LoadAllLocalizedPropertiesOnStartup")]
             public bool LoadAllLocalizedPropertiesOnStartup { get; set; }
-
-            [GrandResourceDisplayName("Admin.Configuration.Settings.GeneralCommon.LoadAllUrlRecordsOnStartup")]
-            public bool LoadAllUrlRecordsOnStartup { get; set; }
+            
         }
 
         public partial class FullTextSettingsModel : BaseGrandModel

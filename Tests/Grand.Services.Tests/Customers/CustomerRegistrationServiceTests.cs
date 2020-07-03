@@ -157,8 +157,8 @@ namespace Grand.Services.Customers.Tests
             _serviceProvider = new Mock<IServiceProvider>().Object;
             _customerSettings = new CustomerSettings();
             _commonSettings = new CommonSettings();
-            _customerService = new CustomerService(new TestMemoryCacheManager(new Mock<IMemoryCache>().Object, _eventPublisher), _customerRepo, _customerRoleRepo, _customerProductRepo, _customerProductPriceRepo,
-                _customerHistoryRepo, _customerRoleProductRepo, _customerNoteRepo, null, _eventPublisher, _serviceProvider);
+            _customerService = new CustomerService(new TestMemoryCacheManager(new Mock<IMemoryCache>().Object, _eventPublisher), _customerRepo, _customerRoleRepo, 
+                _customerHistoryRepo, _customerRoleProductRepo, _customerNoteRepo, null, _eventPublisher);
 
             _customerRegistrationService = new CustomerRegistrationService(
                 _customerService,

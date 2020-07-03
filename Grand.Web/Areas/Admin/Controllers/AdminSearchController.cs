@@ -79,7 +79,7 @@ namespace Grand.Web.Areas.Admin.Controllers
 
                 if (result.Count() < _adminSearchSettings.MaxSearchResultsCount && _adminSearchSettings.SearchInCategories)
                 {
-                    var categories = await _categoryService.GetAllCategories(searchTerm, pageSize: _adminSearchSettings.MaxSearchResultsCount - result.Count(), showHidden: true);
+                    var categories = await _categoryService.GetAllCategories(searchTerm, pageSize: _adminSearchSettings.MaxSearchResultsCount - result.Count(), showHidden: _workContext.CurrentCustomer.IsAdmin());
                     foreach (var category in categories)
                     {
                         result.Add(new Tuple<object, int>(new
@@ -213,6 +213,17 @@ namespace Grand.Web.Areas.Admin.Controllers
                         }, _adminSearchSettings.OrdersDisplayOrder));
                     }
                 }
+                var orders = await _orderService.GetOrdersByCode(searchTerm);
+                foreach (var order in orders)
+                {
+                    result.Add(new Tuple<object, int>(new
+                    {
+                        title = order.Code,
+                        link = Url.Content("~/Admin/Order/Edit/") + order.Id,
+                        source = _localizationService.GetResource("Admin.Orders")
+                    }, _adminSearchSettings.OrdersDisplayOrder));
+                }
+
             }
 
             result = result.OrderBy(x => x.Item2).ToList();

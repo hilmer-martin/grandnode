@@ -10,10 +10,10 @@ using Grand.Services.Localization;
 using Grand.Services.Media;
 using Grand.Services.Orders;
 using Grand.Services.Payments;
+using Grand.Services.Queries.Models.Orders;
 using Grand.Services.Shipping;
+using Grand.Web.Features.Models.Common;
 using Grand.Web.Features.Models.Orders;
-using Grand.Web.Interfaces;
-using Grand.Web.Models.Common;
 using Grand.Web.Models.Media;
 using Grand.Web.Models.Orders;
 using MediatR;
@@ -29,9 +29,7 @@ namespace Grand.Web.Features.Handlers.Orders
         private readonly IDateTimeHelper _dateTimeHelper;
         private readonly IProductService _productService;
         private readonly IProductAttributeParser _productAttributeParser;
-        private readonly IAddressViewModelService _addressViewModelService;
         private readonly ILocalizationService _localizationService;
-        private readonly IOrderProcessingService _orderProcessingService;
         private readonly IShipmentService _shipmentService;
         private readonly IPaymentService _paymentService;
         private readonly ICurrencyService _currencyService;
@@ -40,25 +38,35 @@ namespace Grand.Web.Features.Handlers.Orders
         private readonly IOrderService _orderService;
         private readonly IPictureService _pictureService;
         private readonly IDownloadService _downloadService;
-
+        private readonly IMediator _mediator;
         private readonly CatalogSettings _catalogSettings;
         private readonly OrderSettings _orderSettings;
         private readonly PdfSettings _pdfSettings;
         private readonly TaxSettings _taxSettings;
 
-        public GetOrderDetailsHandler(IDateTimeHelper dateTimeHelper, IProductService productService, IProductAttributeParser productAttributeParser,
-            IAddressViewModelService addressViewModelService, ILocalizationService localizationService,
-            IOrderProcessingService orderProcessingService, IShipmentService shipmentService, IPaymentService paymentService,
-            ICurrencyService currencyService, IPriceFormatter priceFormatter, IGiftCardService giftCardService, IOrderService orderService,
-            IPictureService pictureService, IDownloadService downloadService,
-            CatalogSettings catalogSettings, OrderSettings orderSettings, PdfSettings pdfSettings, TaxSettings taxSettings)
+        public GetOrderDetailsHandler(
+            IDateTimeHelper dateTimeHelper, 
+            IProductService productService, 
+            IProductAttributeParser productAttributeParser,
+            ILocalizationService localizationService,
+            IShipmentService shipmentService, 
+            IPaymentService paymentService,
+            ICurrencyService currencyService, 
+            IPriceFormatter priceFormatter, 
+            IGiftCardService giftCardService, 
+            IOrderService orderService,
+            IPictureService pictureService, 
+            IDownloadService downloadService, 
+            IMediator mediator,
+            CatalogSettings catalogSettings, 
+            OrderSettings orderSettings, 
+            PdfSettings pdfSettings, 
+            TaxSettings taxSettings)
         {
             _dateTimeHelper = dateTimeHelper;
             _productService = productService;
             _productAttributeParser = productAttributeParser;
-            _addressViewModelService = addressViewModelService;
             _localizationService = localizationService;
-            _orderProcessingService = orderProcessingService;
             _shipmentService = shipmentService;
             _paymentService = paymentService;
             _currencyService = currencyService;
@@ -67,7 +75,7 @@ namespace Grand.Web.Features.Handlers.Orders
             _orderService = orderService;
             _pictureService = pictureService;
             _downloadService = downloadService;
-
+            _mediator = mediator;
             _orderSettings = orderSettings;
             _catalogSettings = catalogSettings;
             _pdfSettings = pdfSettings;
@@ -80,10 +88,11 @@ namespace Grand.Web.Features.Handlers.Orders
 
             model.Id = request.Order.Id;
             model.OrderNumber = request.Order.OrderNumber;
+            model.OrderCode = request.Order.Code;
             model.CreatedOn = _dateTimeHelper.ConvertToUserTime(request.Order.CreatedOnUtc, DateTimeKind.Utc);
             model.OrderStatus = request.Order.OrderStatus.GetLocalizedEnum(_localizationService, request.Language.Id);
             model.IsReOrderAllowed = _orderSettings.IsReOrderAllowed;
-            model.IsReturnRequestAllowed = await _orderProcessingService.IsReturnRequestAllowed(request.Order);
+            model.IsReturnRequestAllowed = await _mediator.Send(new IsReturnRequestAllowedQuery() { Order = request.Order });
             model.PdfInvoiceDisabled = _pdfSettings.DisablePdfInvoicesForPendingOrders && request.Order.OrderStatus == OrderStatus.Pending;
             model.ShowAddOrderNote = _orderSettings.AllowCustomerToAddOrderNote;
 
@@ -91,9 +100,12 @@ namespace Grand.Web.Features.Handlers.Orders
             await PrepareShippingInfo(request, model);
 
             //billing info
-            await _addressViewModelService.PrepareModel(model: model.BillingAddress,
-                address: request.Order.BillingAddress,
-                excludeProperties: false);
+            model.BillingAddress = await _mediator.Send(new GetAddressModel() {
+                Language = request.Language,
+                Model = null,
+                Address = request.Order.BillingAddress,
+                ExcludeProperties = false,
+            });
 
             //VAT number
             model.VatNumber = request.Order.VatNumber;
@@ -148,9 +160,12 @@ namespace Grand.Web.Features.Handlers.Orders
                 model.PickUpInStore = request.Order.PickUpInStore;
                 if (!request.Order.PickUpInStore)
                 {
-                    await _addressViewModelService.PrepareModel(model: model.ShippingAddress,
-                        address: request.Order.ShippingAddress,
-                        excludeProperties: false);
+                    model.ShippingAddress = await _mediator.Send(new GetAddressModel() {
+                        Language = request.Language,
+                        Model = null,
+                        Address = request.Order.ShippingAddress,
+                        ExcludeProperties = false,
+                    });
                 }
                 else
                 {
@@ -158,11 +173,11 @@ namespace Grand.Web.Features.Handlers.Orders
                     {
                         if (request.Order.PickupPoint.Address != null)
                         {
-                            model.PickupAddress = new AddressModel();
-
-                            await _addressViewModelService.PrepareModel(model: model.PickupAddress,
-                                address: request.Order.PickupPoint.Address,
-                                excludeProperties: false);
+                            model.PickupAddress = await _mediator.Send(new GetAddressModel() {
+                                Language = request.Language,
+                                Address = request.Order.PickupPoint.Address,
+                                ExcludeProperties = false,
+                            });
                         }
                     }
                 }
@@ -405,10 +420,10 @@ namespace Grand.Web.Features.Handlers.Orders
                 }
 
                 //downloadable products
-                if (await _downloadService.IsDownloadAllowed(request.Order, orderItem))
+                if (_downloadService.IsDownloadAllowed(request.Order, orderItem, product))
                     orderItemModel.DownloadId = product.DownloadId;
-                if (await _downloadService.IsLicenseDownloadAllowed(request.Order, orderItem))
-                    orderItemModel.LicenseId = !String.IsNullOrEmpty(orderItem.LicenseDownloadId) ? orderItem.LicenseDownloadId : "";
+                if (_downloadService.IsLicenseDownloadAllowed(request.Order, orderItem, product))
+                    orderItemModel.LicenseId = !string.IsNullOrEmpty(orderItem.LicenseDownloadId) ? orderItem.LicenseDownloadId : "";
             }
 
         }

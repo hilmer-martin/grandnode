@@ -77,11 +77,6 @@ namespace Grand.Services.Discounts.Tests
 
             _discountUsageHistoryRepo = new Mock<IRepository<DiscountUsageHistory>>().Object;
             _discountCouponRepo = new Mock<IRepository<DiscountCoupon>>().Object;
-            var extraProductRepo = new Mock<IRepository<Product>>().Object;
-            var extraCategoryRepo = new Mock<IRepository<Category>>().Object;
-            var extraManufacturerRepo = new Mock<IRepository<Manufacturer>>().Object;
-            var extraStoreRepo = new Mock<IRepository<Store>>().Object;
-            var extraVendorRepo = new Mock<IRepository<Vendor>>().Object;
 
             _genericAttributeService = new Mock<IGenericAttributeService>().Object;
             _localizationService = new Mock<ILocalizationService>().Object;
@@ -89,8 +84,8 @@ namespace Grand.Services.Discounts.Tests
             _catalogSettings = new Mock<CatalogSettings>().Object;
 
             _discountService = new DiscountService(new TestMemoryCacheManager(new Mock<IMemoryCache>().Object, _eventPublisher), _discountRepo, _discountCouponRepo,
-                _discountUsageHistoryRepo, _localizationService, _storeContext, _genericAttributeService,
-                new PluginFinder(_serviceProvider), _eventPublisher, extraProductRepo, extraCategoryRepo, extraManufacturerRepo, extraVendorRepo, new PerRequestCacheManager(null),
+                _discountUsageHistoryRepo, _localizationService, _storeContext,
+                new PluginFinder(_serviceProvider), _eventPublisher, 
                 _shoppingCartSettings, _catalogSettings);
         }
 

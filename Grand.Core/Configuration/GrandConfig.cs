@@ -87,6 +87,11 @@ namespace Grand.Core.Configuration
         public string AmazonBucketName { get; set; }
 
         /// <summary>
+        /// Amazon Domain name for cloudfront distribution
+        /// </summary>
+        public string AmazonDistributionDomainName { get; set; }
+
+        /// <summary>
         /// Amazon Region 
         /// http://docs.amazonwebservices.com/AmazonS3/latest/BucketConfiguration.html#LocationSelection
         /// </summary>
@@ -111,6 +116,22 @@ namespace Grand.Core.Configuration
         /// Gets or sets a value indicating for cookie expires in hours - default 24 * 365 = 8760
         /// </summary>
         public int CookieAuthExpires { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether mini profiler should be displayed in public store (used for debugging)
+        /// </summary>
+        public bool DisplayMiniProfilerInPublicStore { get; set; }
+
+        /// <summary>
+        /// A value indicating whether SEO friendly URLs with multiple languages are enabled
+        /// </summary>
+        public bool SeoFriendlyUrlsForLanguagesEnabled { get; set; }
+        public string SeoFriendlyUrlsDefaultCode { get; set; } = "en";
+        
+        /// <summary>
+        /// A value indicating whether to load all search engine friendly names (slugs) on application startup
+        /// </summary>
+        public bool LoadAllUrlRecordsOnStartup { get; set; }
 
         /// <summary>
         /// Enable minimal Progressive Web App.
@@ -189,5 +210,10 @@ namespace Grand.Core.Configuration
         /// Gets or sets a value indicating whether ignore IgnoreUsePoweredByMiddleware
         /// </summary>
         public bool IgnoreUsePoweredByMiddleware { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating - (Serilog) use middleware for smarter HTTP request logging
+        /// </summary>
+        public bool UseSerilogRequestLogging { get; set; }
     }
 }

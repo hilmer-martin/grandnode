@@ -1,4 +1,5 @@
-﻿using Grand.Core.Data;
+﻿using Grand.Core.Configuration;
+using Grand.Core.Data;
 using Grand.Core.Domain.Localization;
 using Grand.Framework.Mvc.Routing;
 using Grand.Services.Localization;
@@ -16,12 +17,10 @@ namespace Grand.Web.Infrastructure
             var pattern = "";
             if (DataSettingsHelper.DatabaseIsInstalled())
             {
-                var localizationSettings = routeBuilder.ServiceProvider.GetRequiredService<LocalizationSettings>();
-                if (localizationSettings.SeoFriendlyUrlsForLanguagesEnabled)
+                var config = routeBuilder.ServiceProvider.GetRequiredService<GrandConfig>();
+                if (config.SeoFriendlyUrlsForLanguagesEnabled)
                 {
-                    var langservice = routeBuilder.ServiceProvider.GetRequiredService<ILanguageService>();
-                    var languages = langservice.GetAllLanguages().GetAwaiter().GetResult();
-                    pattern = "{language:lang=" + languages.FirstOrDefault().UniqueSeoCode + "}/";
+                    pattern = $"{{language:lang={config.SeoFriendlyUrlsDefaultCode}}}/";
                 }
             }
 
@@ -689,7 +688,7 @@ namespace Grand.Web.Infrastructure
                             new { controller = "Blog", action = "BlogByMonth" });
 
             routeBuilder.MapControllerRoute("BlogByCategory",
-                            pattern + "blog/category/{categoryid}",
+                            pattern + "blog/category/{categorySeName}",
                             new { controller = "Blog", action = "BlogByCategory" });
 
             routeBuilder.MapControllerRoute("BlogByKeyword",
@@ -766,6 +765,10 @@ namespace Grand.Web.Infrastructure
                             pattern + "deletecartitem/{id}",
                             new { controller = "ShoppingCart", action = "DeleteCartItem" });
 
+            routeBuilder.MapControllerRoute("ChangeTypeCartItem",
+                pattern + "changetypecartitem/{id}",
+                new { controller = "ShoppingCart", action = "ChangeTypeCartItem" });
+
             //estimate shipping
             routeBuilder.MapControllerRoute("EstimateShipping",
                             $"{pattern}cart/estimateshipping",
@@ -805,6 +808,7 @@ namespace Grand.Web.Infrastructure
             routeBuilder.MapControllerRoute("ShipmentDetails",
                             pattern + "orderdetails/shipment/{shipmentId}",
                             new { controller = "Order", action = "ShipmentDetails" });
+
 
             routeBuilder.MapControllerRoute("ReOrder",
                            pattern + "reorder/{orderId}",
@@ -882,14 +886,21 @@ namespace Grand.Web.Infrastructure
                             new { controller = "Download", action = "GetLicense" });
 
 
-
             routeBuilder.MapControllerRoute("GetOrderNoteFile",
                             pattern + "download/ordernotefile/{ordernoteid}",
                             new { controller = "Download", action = "GetOrderNoteFile" });
 
+            routeBuilder.MapControllerRoute("GetShipmentNoteFile",
+                            pattern + "download/shipmentnotefile/{shipmentnoteid}",
+                            new { controller = "Download", action = "GetShipmentNoteFile" });
+
             routeBuilder.MapControllerRoute("GetCustomerNoteFile",
                             pattern + "download/customernotefile/{customernoteid}",
                             new { controller = "Download", action = "GetCustomerNoteFile" });
+
+            routeBuilder.MapControllerRoute("GetReturnRequestNoteFile",
+                            pattern + "download/returnrequestnotefile/{returnrequestnoteid}",
+                            new { controller = "Download", action = "GetReturnRequestNoteFile" });
 
             routeBuilder.MapControllerRoute("GetDocumentFile",
                             pattern + "download/documentfile/{documentid}",

@@ -50,7 +50,6 @@ namespace Grand.Web.Areas.Admin.Services
         private readonly ICategoryService _categoryService;
         private readonly IVendorService _vendorService;
         private readonly ILocalizationService _localizationService;
-        private readonly ICacheManager _cacheManager;
         private readonly IProductTemplateService _productTemplateService;
         private readonly ISpecificationAttributeService _specificationAttributeService;
         private readonly IWorkContext _workContext;
@@ -72,6 +71,7 @@ namespace Grand.Web.Areas.Admin.Services
         private readonly CurrencySettings _currencySettings;
         private readonly MeasureSettings _measureSettings;
         private readonly TaxSettings _taxSettings;
+
         public ProductViewModelService(
                IProductService productService,
                IPictureService pictureService,
@@ -84,7 +84,6 @@ namespace Grand.Web.Areas.Admin.Services
                ICategoryService categoryService,
                IVendorService vendorService,
                ILocalizationService localizationService,
-               ICacheManager cacheManager,
                IProductTemplateService productTemplateService,
                ISpecificationAttributeService specificationAttributeService,
                IWorkContext workContext,
@@ -117,7 +116,6 @@ namespace Grand.Web.Areas.Admin.Services
             _categoryService = categoryService;
             _vendorService = vendorService;
             _localizationService = localizationService;
-            _cacheManager = cacheManager;
             _productTemplateService = productTemplateService;
             _specificationAttributeService = specificationAttributeService;
             _workContext = workContext;
@@ -198,7 +196,7 @@ namespace Grand.Web.Areas.Admin.Services
                 if (productTag != null)
                 {
                     productTag.ProductId = product.Id;
-                    await _productService.DeleteProductTag(productTag);
+                    await _productTagService.DetachProductTag(productTag);
                 }
             }
             foreach (var productTagName in productTags)
@@ -222,7 +220,7 @@ namespace Grand.Web.Areas.Admin.Services
                 if (!product.ProductTagExists(productTag.Name))
                 {
                     productTag.ProductId = product.Id;
-                    await _productService.InsertProductTag(productTag);
+                    await _productTagService.AttachProductTag(productTag);
                 }
             }
         }
@@ -301,7 +299,7 @@ namespace Grand.Web.Areas.Admin.Services
                 model.AvailableStores.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
 
             foreach (var store in (await _storeService.GetAllStores()).Where(x => x.Id == storeId || string.IsNullOrWhiteSpace(storeId)))
-                model.AvailableStores.Add(new SelectListItem { Text = store.Name, Value = store.Id.ToString() });
+                model.AvailableStores.Add(new SelectListItem { Text = store.Shortcut, Value = store.Id.ToString() });
 
             //customer roles
             model.AvailableCustomerRoles.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -462,7 +460,7 @@ namespace Grand.Web.Areas.Admin.Services
                 foreach (var category in allCategories)
                 {
                     model.AvailableCategories.Add(new SelectListItem {
-                        Text = category.GetFormattedBreadCrumb(allCategories),
+                        Text = _categoryService.GetFormattedBreadCrumb(category, allCategories),
                         Value = category.Id.ToString()
                     });
                 }
@@ -660,7 +658,8 @@ namespace Grand.Web.Areas.Admin.Services
                 items.Add(new OrderModel {
                     Id = x.Id,
                     OrderNumber = x.OrderNumber,
-                    StoreName = store != null ? store.Name : "Unknown",
+                    Code = x.Code,
+                    StoreName = store != null ? store.Shortcut : "Unknown",
                     OrderStatus = x.OrderStatus.GetLocalizedEnum(_localizationService, _workContext),
                     PaymentStatus = x.PaymentStatus.GetLocalizedEnum(_localizationService, _workContext),
                     ShippingStatus = x.ShippingStatus.GetLocalizedEnum(_localizationService, _workContext),
@@ -737,7 +736,7 @@ namespace Grand.Web.Areas.Admin.Services
             var customer = await _customerService.GetCustomerById(productReview.CustomerId);
             var store = await _storeService.GetStoreById(productReview.StoreId);
             model.Id = productReview.Id;
-            model.StoreName = store != null ? store.Name : "";
+            model.StoreName = store != null ? store.Shortcut : "";
             model.ProductId = productReview.ProductId;
             model.ProductName = product.Name;
             model.CustomerId = productReview.CustomerId;
@@ -777,7 +776,7 @@ namespace Grand.Web.Areas.Admin.Services
             model.AvailableCategories.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
             var categories = await _categoryService.GetAllCategories(showHidden: true, storeId: storeId);
             foreach (var c in categories)
-                model.AvailableCategories.Add(new SelectListItem { Text = c.GetFormattedBreadCrumb(categories), Value = c.Id.ToString() });
+                model.AvailableCategories.Add(new SelectListItem { Text = _categoryService.GetFormattedBreadCrumb(c, categories), Value = c.Id.ToString() });
 
             //manufacturers
             model.AvailableManufacturers.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -791,10 +790,10 @@ namespace Grand.Web.Areas.Admin.Services
                 if (_workContext.CurrentVendor != null && !string.IsNullOrEmpty(_workContext.CurrentVendor.StoreId))
                 {
                     if (s.Id == _workContext.CurrentVendor.StoreId)
-                        model.AvailableStores.Add(new SelectListItem { Text = s.Name, Value = s.Id.ToString() });
+                        model.AvailableStores.Add(new SelectListItem { Text = s.Shortcut, Value = s.Id.ToString() });
                 }
                 else
-                    model.AvailableStores.Add(new SelectListItem { Text = s.Name, Value = s.Id.ToString() });
+                    model.AvailableStores.Add(new SelectListItem { Text = s.Shortcut, Value = s.Id.ToString() });
             }
             //warehouses
             model.AvailableWarehouses.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -1088,7 +1087,7 @@ namespace Grand.Web.Areas.Admin.Services
         public virtual async Task DeleteSelected(IList<string> selectedIds)
         {
             var products = new List<Product>();
-            products.AddRange(await _productService.GetProductsByIds(selectedIds.ToArray()));
+            products.AddRange(await _productService.GetProductsByIds(selectedIds.ToArray(), true));
             for (var i = 0; i < products.Count; i++)
             {
                 var product = products[i];
@@ -1120,7 +1119,7 @@ namespace Grand.Web.Areas.Admin.Services
             model.AvailableCategories.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
             var categories = await _categoryService.GetAllCategories(showHidden: true, storeId: storeId);
             foreach (var c in categories)
-                model.AvailableCategories.Add(new SelectListItem { Text = c.GetFormattedBreadCrumb(categories), Value = c.Id.ToString() });
+                model.AvailableCategories.Add(new SelectListItem { Text = _categoryService.GetFormattedBreadCrumb(c, categories), Value = c.Id.ToString() });
 
             //manufacturers
             model.AvailableManufacturers.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -1130,7 +1129,7 @@ namespace Grand.Web.Areas.Admin.Services
             //stores
             model.AvailableStores.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
             foreach (var s in (await _storeService.GetAllStores()).Where(x => x.Id == storeId || string.IsNullOrWhiteSpace(storeId)))
-                model.AvailableStores.Add(new SelectListItem { Text = s.Name, Value = s.Id.ToString() });
+                model.AvailableStores.Add(new SelectListItem { Text = s.Shortcut, Value = s.Id.ToString() });
 
             //vendors
             model.AvailableVendors.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -1245,9 +1244,10 @@ namespace Grand.Web.Areas.Admin.Services
             var items = new List<ProductModel.ProductCategoryModel>();
             foreach (var x in productCategories)
             {
+                var category = await _categoryService.GetCategoryById(x.CategoryId);
                 items.Add(new ProductModel.ProductCategoryModel {
                     Id = x.Id,
-                    Category = await (await _categoryService.GetCategoryById(x.CategoryId)).GetFormattedBreadCrumb(_categoryService),
+                    Category = await _categoryService.GetFormattedBreadCrumb(category),
                     ProductId = product.Id,
                     CategoryId = x.CategoryId,
                     IsFeaturedProduct = x.IsFeaturedProduct,
@@ -1698,7 +1698,7 @@ namespace Grand.Web.Areas.Admin.Services
             model.AvailableCategories.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
             var categories = await _categoryService.GetAllCategories(showHidden: true, storeId: storeId);
             foreach (var c in categories)
-                model.AvailableCategories.Add(new SelectListItem { Text = c.GetFormattedBreadCrumb(categories), Value = c.Id.ToString() });
+                model.AvailableCategories.Add(new SelectListItem { Text = _categoryService.GetFormattedBreadCrumb(c, categories), Value = c.Id.ToString() });
 
             //manufacturers
             model.AvailableManufacturers.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -1708,7 +1708,7 @@ namespace Grand.Web.Areas.Admin.Services
             //stores
             model.AvailableStores.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
             foreach (var s in (await _storeService.GetAllStores()).Where(x => x.Id == storeId || string.IsNullOrWhiteSpace(storeId)))
-                model.AvailableStores.Add(new SelectListItem { Text = s.Name, Value = s.Id.ToString() });
+                model.AvailableStores.Add(new SelectListItem { Text = s.Shortcut, Value = s.Id.ToString() });
 
             //vendors
             model.AvailableVendors.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -1735,7 +1735,7 @@ namespace Grand.Web.Areas.Admin.Services
             model.AvailableCategories.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
             var categories = await _categoryService.GetAllCategories(showHidden: true, storeId: storeId);
             foreach (var c in categories)
-                model.AvailableCategories.Add(new SelectListItem { Text = c.GetFormattedBreadCrumb(categories), Value = c.Id.ToString() });
+                model.AvailableCategories.Add(new SelectListItem { Text = _categoryService.GetFormattedBreadCrumb(c, categories), Value = c.Id.ToString() });
 
             //manufacturers
             model.AvailableManufacturers.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -1745,7 +1745,7 @@ namespace Grand.Web.Areas.Admin.Services
             //stores
             model.AvailableStores.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
             foreach (var s in (await _storeService.GetAllStores()).Where(x => x.Id == storeId || string.IsNullOrWhiteSpace(storeId)))
-                model.AvailableStores.Add(new SelectListItem { Text = s.Name, Value = s.Id.ToString() });
+                model.AvailableStores.Add(new SelectListItem { Text = s.Shortcut, Value = s.Id.ToString() });
 
             //vendors
             model.AvailableVendors.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -1772,7 +1772,7 @@ namespace Grand.Web.Areas.Admin.Services
             model.AvailableCategories.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
             var categories = await _categoryService.GetAllCategories(showHidden: true, storeId: storeId);
             foreach (var c in categories)
-                model.AvailableCategories.Add(new SelectListItem { Text = c.GetFormattedBreadCrumb(categories), Value = c.Id.ToString() });
+                model.AvailableCategories.Add(new SelectListItem { Text = _categoryService.GetFormattedBreadCrumb(c, categories), Value = c.Id.ToString() });
 
             //manufacturers
             model.AvailableManufacturers.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -1782,7 +1782,7 @@ namespace Grand.Web.Areas.Admin.Services
             //stores
             model.AvailableStores.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
             foreach (var s in (await _storeService.GetAllStores()).Where(x => x.Id == storeId || string.IsNullOrWhiteSpace(storeId)))
-                model.AvailableStores.Add(new SelectListItem { Text = s.Name, Value = s.Id.ToString() });
+                model.AvailableStores.Add(new SelectListItem { Text = s.Shortcut, Value = s.Id.ToString() });
 
             //vendors
             model.AvailableVendors.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -1806,7 +1806,7 @@ namespace Grand.Web.Areas.Admin.Services
             model.AvailableCategories.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
             var categories = await _categoryService.GetAllCategories(showHidden: true, storeId: storeId);
             foreach (var c in categories)
-                model.AvailableCategories.Add(new SelectListItem { Text = c.GetFormattedBreadCrumb(categories), Value = c.Id.ToString() });
+                model.AvailableCategories.Add(new SelectListItem { Text = _categoryService.GetFormattedBreadCrumb(c, categories), Value = c.Id.ToString() });
 
             //manufacturers
             model.AvailableManufacturers.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -1816,7 +1816,7 @@ namespace Grand.Web.Areas.Admin.Services
             //stores
             model.AvailableStores.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
             foreach (var s in (await _storeService.GetAllStores()).Where(x => x.Id == storeId || string.IsNullOrWhiteSpace(storeId)))
-                model.AvailableStores.Add(new SelectListItem { Text = s.Name, Value = s.Id.ToString() });
+                model.AvailableStores.Add(new SelectListItem { Text = s.Shortcut, Value = s.Id.ToString() });
 
             //vendors
             model.AvailableVendors.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -1844,7 +1844,7 @@ namespace Grand.Web.Areas.Admin.Services
             model.AvailableCategories.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
             var categories = await _categoryService.GetAllCategories(showHidden: true, storeId: storeId);
             foreach (var c in categories)
-                model.AvailableCategories.Add(new SelectListItem { Text = c.GetFormattedBreadCrumb(categories), Value = c.Id.ToString() });
+                model.AvailableCategories.Add(new SelectListItem { Text = _categoryService.GetFormattedBreadCrumb(c, categories), Value = c.Id.ToString() });
 
             //manufacturers
             model.AvailableManufacturers.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -1854,7 +1854,7 @@ namespace Grand.Web.Areas.Admin.Services
             //stores
             model.AvailableStores.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
             foreach (var s in (await _storeService.GetAllStores()).Where(x => x.Id == storeId || string.IsNullOrWhiteSpace(storeId)))
-                model.AvailableStores.Add(new SelectListItem { Text = s.Name, Value = s.Id.ToString() });
+                model.AvailableStores.Add(new SelectListItem { Text = s.Shortcut, Value = s.Id.ToString() });
 
             //vendors
             model.AvailableVendors.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -1877,7 +1877,7 @@ namespace Grand.Web.Areas.Admin.Services
             model.AvailableCategories.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
             var categories = await _categoryService.GetAllCategories(showHidden: true, storeId: storeId);
             foreach (var c in categories)
-                model.AvailableCategories.Add(new SelectListItem { Text = c.GetFormattedBreadCrumb(categories), Value = c.Id.ToString() });
+                model.AvailableCategories.Add(new SelectListItem { Text = _categoryService.GetFormattedBreadCrumb(c, categories), Value = c.Id.ToString() });
 
             //manufacturers
             model.AvailableManufacturers.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -1893,7 +1893,7 @@ namespace Grand.Web.Areas.Admin.Services
             {
                 storeId = _workContext.CurrentCustomer.StaffStoreId;
                 var store = (await _storeService.GetAllStores()).Where(x => x.Id == storeId).FirstOrDefault();
-                model.AvailableStores.Add(new SelectListItem { Text = store.Name, Value = store.Id.ToString() });
+                model.AvailableStores.Add(new SelectListItem { Text = store.Shortcut, Value = store.Id.ToString() });
             }
             else
             {
@@ -1901,7 +1901,7 @@ namespace Grand.Web.Areas.Admin.Services
 
                 foreach (var s in (await _storeService.GetAllStores()))
                 {
-                    model.AvailableStores.Add(new SelectListItem { Text = s.Name, Value = s.Id.ToString() });
+                    model.AvailableStores.Add(new SelectListItem { Text = s.Shortcut, Value = s.Id.ToString() });
                 }
             }
             return model;
@@ -2030,7 +2030,7 @@ namespace Grand.Web.Areas.Admin.Services
                 if (!string.IsNullOrEmpty(x.StoreId))
                 {
                     var store = await _storeService.GetStoreById(x.StoreId);
-                    storeName = store != null ? store.Name : "Deleted";
+                    storeName = store != null ? store.Shortcut : "Deleted";
                 }
                 else
                     storeName = _localizationService.GetResource("Admin.Catalog.Products.TierPrices.Fields.Store.All");
@@ -2139,6 +2139,7 @@ namespace Grand.Web.Areas.Admin.Services
                     ProductAttributeId = x.ProductAttributeId,
                     TextPrompt = x.TextPrompt,
                     IsRequired = x.IsRequired,
+                    ShowOnCatalogPage = x.ShowOnCatalogPage,
                     AttributeControlType = x.AttributeControlType.GetLocalizedEnum(_localizationService, _workContext),
                     AttributeControlTypeId = x.AttributeControlTypeId,
                     DisplayOrder = x.DisplayOrder
@@ -2556,7 +2557,7 @@ namespace Grand.Web.Areas.Admin.Services
             model.AvailableCategories.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
             var categories = await _categoryService.GetAllCategories(showHidden: true, storeId: storeId);
             foreach (var c in categories)
-                model.AvailableCategories.Add(new SelectListItem { Text = c.GetFormattedBreadCrumb(categories), Value = c.Id.ToString() });
+                model.AvailableCategories.Add(new SelectListItem { Text = _categoryService.GetFormattedBreadCrumb(c, categories), Value = c.Id.ToString() });
 
             //manufacturers
             model.AvailableManufacturers.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -2566,7 +2567,7 @@ namespace Grand.Web.Areas.Admin.Services
             //stores
             model.AvailableStores.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
             foreach (var s in (await _storeService.GetAllStores()).Where(x => x.Id == storeId || string.IsNullOrWhiteSpace(storeId)))
-                model.AvailableStores.Add(new SelectListItem { Text = s.Name, Value = s.Id.ToString() });
+                model.AvailableStores.Add(new SelectListItem { Text = s.Shortcut, Value = s.Id.ToString() });
 
             //vendors
             model.AvailableVendors.Add(new SelectListItem { Text = _localizationService.GetResource("Admin.Common.All"), Value = " " });
@@ -2939,7 +2940,7 @@ namespace Grand.Web.Areas.Admin.Services
                 if (!string.IsNullOrEmpty(x.StoreId))
                 {
                     var store = await _storeService.GetStoreById(x.StoreId);
-                    storeName = store != null ? store.Name : "Deleted";
+                    storeName = store != null ? store.Shortcut : "Deleted";
                 }
                 else
                 {

@@ -95,6 +95,7 @@ namespace Grand.Services.Orders.Tests
         private Store _store;
         private IProductReservationService _productReservationService;
         private IAuctionService _auctionService;
+        private ICustomerProductService _customerProductService;
         private IServiceProvider _serviceProvider;
 
         [TestInitialize()]
@@ -128,6 +129,7 @@ namespace Grand.Services.Orders.Tests
             _categoryService = new Mock<ICategoryService>().Object;
             _manufacturerService = new Mock<IManufacturerService>().Object;
             _customerService = new Mock<ICustomerService>().Object;
+            _customerProductService = new Mock<ICustomerProductService>().Object;
             _productReservationService = new Mock<IProductReservationService>().Object;
             _currencyService = new Mock<ICurrencyService>().Object;
             _auctionService = new Mock<IAuctionService>().Object;
@@ -137,7 +139,7 @@ namespace Grand.Services.Orders.Tests
             _productAttributeParser = new Mock<IProductAttributeParser>().Object;
             _priceCalcService = new PriceCalculationService(_workContext, _storeContext,
                 _discountService, _categoryService, _manufacturerService,
-                _productAttributeParser, _productService, _customerService,
+                _productAttributeParser, _productService, _customerProductService,
                 _vendorService, _currencyService, _shoppingCartSettings, _catalogSettings);
 
             
@@ -166,11 +168,9 @@ namespace Grand.Services.Orders.Tests
             _countryService,
             _stateProvinceService,
             pluginFinder,
-            _storeContext,
             _eventPublisher,
             _currencyService,
             cacheManager,
-            null,
             _shoppingCartSettings,
             _shippingSettings);
             _shipmentService = new Mock<IShipmentService>().Object;
@@ -203,15 +203,14 @@ namespace Grand.Services.Orders.Tests
                 _addressService = tempAddressService.Object;
             }
 
-            _taxService = new TaxService(_addressService, _workContext, _taxSettings,
-                pluginFinder, _geoLookupService, _countryService, _serviceProvider, _logger, _customerSettings, _addressSettings);
+            _taxService = new TaxService(_addressService, _workContext, pluginFinder, _geoLookupService, _countryService, _logger, _taxSettings, _customerSettings, _addressSettings);
 
             _rewardPointsSettings = new RewardPointsSettings();
 
             _orderTotalCalcService = new OrderTotalCalculationService(_workContext, _storeContext,
                 _priceCalcService, _taxService, _shippingService, _paymentService,
                 _checkoutAttributeParser, _discountService, _giftCardService,
-                _genericAttributeService, null, _productService, _currencyService,
+                null, _productService, _currencyService,
                 _taxSettings, _rewardPointsSettings, _shippingSettings, _shoppingCartSettings, _catalogSettings);
 
             _orderService = new Mock<IOrderService>().Object;
@@ -246,14 +245,13 @@ namespace Grand.Services.Orders.Tests
                 _orderTotalCalcService, _priceCalcService, _priceFormatter,
                 _productAttributeParser, _productAttributeFormatter,
                 _giftCardService, _shoppingCartService, _checkoutAttributeFormatter,
-                _shippingService, _shipmentService, _taxService,
+                _shippingService, _taxService,
                 _customerService, _discountService,
                 _encryptionService, _workContext,
                 _workflowMessageService, _vendorService,
-                _customerActivityService, tempICustomerActionEventService,
                 _currencyService, _affiliateService,
-                _eventPublisher, _pdfService, null, null, _storeContext, _productReservationService, _auctionService, _genericAttributeService, _serviceProvider,
-                _shippingSettings, _paymentSettings, _rewardPointsSettings,
+                _eventPublisher, _pdfService, null, _storeContext, _productReservationService, _auctionService, _countryService,
+                _shippingSettings, _shoppingCartSettings,  _paymentSettings, 
                 _orderSettings, _taxSettings, _localizationSettings);
         }
 

@@ -1,9 +1,10 @@
-﻿using Grand.Api.Controllers;
+﻿using Grand.Api.Commands.Models.Customers;
 using Grand.Api.DTOs.Customers;
-using Grand.Api.Interfaces;
+using Grand.Api.Queries.Models.Customers;
 using Grand.Core.Domain.Customers;
 using Grand.Services.Customers;
 using Grand.Services.Security;
+using MediatR;
 using Microsoft.AspNet.OData;
 using Microsoft.AspNetCore.Mvc;
 using System.Linq;
@@ -13,29 +14,31 @@ namespace Grand.Web.Areas.Api.Controllers.OData
 {
     public partial class CustomerController : BaseODataController
     {
-        private readonly ICustomerApiService _customerApiService;
+        private readonly IMediator _mediator;
         private readonly IPermissionService _permissionService;
         private readonly ICustomerRegistrationService _customerRegistrationService;
 
         private readonly CustomerSettings _customerSettings;
 
-        public CustomerController(ICustomerApiService customerApiService, IPermissionService permissionService,
+        public CustomerController(
+            IMediator mediator,
+            IPermissionService permissionService,
             ICustomerRegistrationService customerRegistrationService,
             CustomerSettings customerSettings)
         {
-            _customerApiService = customerApiService;
+            _mediator = mediator;
             _customerRegistrationService = customerRegistrationService;
             _customerSettings = customerSettings;
             _permissionService = permissionService;
         }
 
-        [HttpGet]
+        [HttpGet("{key}")]
         public async Task<IActionResult> Get(string key)
         {
             if (!await _permissionService.Authorize(PermissionSystemName.Customers))
                 return Forbid();
 
-            var customer = await _customerApiService.GetByEmail(key);
+            var customer = await _mediator.Send(new GetCustomerQuery() { Email = key });
             if (customer == null)
                 return NotFound();
 
@@ -50,7 +53,7 @@ namespace Grand.Web.Areas.Api.Controllers.OData
 
             if (ModelState.IsValid)
             {
-                model = await _customerApiService.InsertOrUpdateCustomer(model);
+                model = await _mediator.Send(new AddCustomerCommand() { Model = model });
                 return Created(model);
             }
             return BadRequest(ModelState);
@@ -63,26 +66,31 @@ namespace Grand.Web.Areas.Api.Controllers.OData
 
             if (ModelState.IsValid)
             {
-                model = await _customerApiService.UpdateCustomer(model);
+                model = await _mediator.Send(new UpdateCustomerCommand() { Model = model });
                 return Updated(model);
             }
             return BadRequest(ModelState);
         }
+
         [HttpDelete]
         public async Task<IActionResult> Delete(string key)
         {
             if (!await _permissionService.Authorize(PermissionSystemName.Customers))
                 return Forbid();
 
-            var customer = await _customerApiService.GetByEmail(key);
+            var customer = await _mediator.Send(new GetCustomerQuery() { Email = key });
             if (customer == null)
             {
                 return NotFound();
             }
-            await _customerApiService.DeleteCustomer(customer);
+
+            await _mediator.Send(new DeleteCustomerCommand() { Email = key });
+
             return Ok();
         }
-        //odata/Customer(email)/AddAddress
+
+        //odata/Customer/AddAddress/(email)
+        [Route("[action]/({key}")]
         [HttpPost]
         public async Task<IActionResult> AddAddress(string key, [FromBody] AddressDto address)
         {
@@ -92,16 +100,17 @@ namespace Grand.Web.Areas.Api.Controllers.OData
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            var customer = await _customerApiService.GetByEmail(key);
+            var customer = await _mediator.Send(new GetCustomerQuery() { Email = key });
             if (customer == null)
                 return NotFound();
 
-            address = await _customerApiService.InsertAddress(customer, address);
+            address = await _mediator.Send(new AddCustomerAddressCommand() { Customer = customer, Address = address });
             return Ok(address);
         }
 
-        //odata/Customer(email)/UpdateAddress
-        [HttpPut]
+        //odata/Customer/UpdateAddress/(email)
+        [Route("[action]/({key})")]
+        [HttpPost]
         public async Task<IActionResult> UpdateAddress(string key, [FromBody] AddressDto address)
         {
             if (!await _permissionService.Authorize(PermissionSystemName.Customers))
@@ -110,16 +119,18 @@ namespace Grand.Web.Areas.Api.Controllers.OData
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            var customer = await _customerApiService.GetByEmail(key);
+            var customer = await _mediator.Send(new GetCustomerQuery() { Email = key });
             if (customer == null)
                 return NotFound();
 
-            address = await _customerApiService.UpdateAddress(customer, address);
+            address = await _mediator.Send(new UpdateCustomerAddressCommand() { Customer = customer, Address = address });
+
             return Ok(address);
         }
 
-        //odata/Customer(email)/DeleteAddress
+        //odata/Customer/DeleteAddress/(email)
         //body: { "addressId": "xxx" }
+        [Route("[action]/({key})")]
         [HttpPost]
         public async Task<IActionResult> DeleteAddress(string key, [FromBody] ODataActionParameters parameters)
         {
@@ -130,7 +141,7 @@ namespace Grand.Web.Areas.Api.Controllers.OData
             if (addressId == null)
                 return NotFound();
 
-            var customer = await _customerApiService.GetByEmail(key);
+            var customer = await _mediator.Send(new GetCustomerQuery() { Email = key });
             if (customer == null)
                 return NotFound();
 
@@ -138,13 +149,15 @@ namespace Grand.Web.Areas.Api.Controllers.OData
             if (address == null)
                 return NotFound();
 
-            await _customerApiService.DeleteAddress(customer, address);
+            await _mediator.Send(new DeleteCustomerAddressCommand() { Customer = customer, Address = address });
+
             return Ok(true);
         }
 
 
-        //odata/Customer(email)/SetPassword
+        //odata/Customer/SetPassword/(email)
         //body: { "password": "123456" }
+        [Route("[action]/({key})")]
         [HttpPost]
         public async Task<IActionResult> SetPassword(string key, [FromBody] ODataActionParameters parameters)
         {
@@ -162,7 +175,6 @@ namespace Grand.Web.Areas.Api.Controllers.OData
                 return BadRequest(string.Join(',', changePassResult.Errors));
             }
             return Ok(true);
-
         }
     }
 }

@@ -3,14 +3,15 @@ using Grand.Core.Domain.Customers;
 using Grand.Core.Domain.Orders;
 using Grand.Core.Domain.Shipping;
 using Grand.Framework.Controllers;
+using Grand.Services.Commands.Models.Orders;
 using Grand.Services.Common;
 using Grand.Services.Localization;
 using Grand.Services.Orders;
 using Grand.Services.Payments;
 using Grand.Services.Shipping;
-using Grand.Web.Commands.Models;
+using Grand.Web.Commands.Models.Orders;
+using Grand.Web.Events;
 using Grand.Web.Features.Models.Orders;
-using Grand.Web.Interfaces;
 using Grand.Web.Models.Orders;
 using MediatR;
 using Microsoft.AspNetCore.Http;
@@ -18,6 +19,7 @@ using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace Grand.Web.Controllers
@@ -68,8 +70,8 @@ namespace Grand.Web.Controllers
             if (!_workContext.CurrentCustomer.IsRegistered())
                 return Challenge();
 
-            var model = await _mediator.Send(new GetCustomerOrderList() { 
-                Customer = _workContext.CurrentCustomer, 
+            var model = await _mediator.Send(new GetCustomerOrderList() {
+                Customer = _workContext.CurrentCustomer,
                 Language = _workContext.WorkingLanguage,
                 Store = _storeContext.CurrentStore
             });
@@ -125,7 +127,7 @@ namespace Grand.Web.Controllers
             if (!rewardPointsSettings.Enabled)
                 return RedirectToRoute("CustomerInfo");
 
-            var model = await _mediator.Send(new GetCustomerRewardPoints() { 
+            var model = await _mediator.Send(new GetCustomerRewardPoints() {
                 Customer = _workContext.CurrentCustomer,
                 Store = _storeContext.CurrentStore,
                 Currency = _workContext.WorkingCurrency
@@ -170,7 +172,7 @@ namespace Grand.Web.Controllers
 
                 return Challenge();
 
-            await _orderProcessingService.CancelOrder(order, true, true);
+            await _mediator.Send(new CancelOrderCommand() { Order = order, NotifyCustomer = true, NotifyStoreOwner = true });
 
             return RedirectToRoute("OrderDetails", new { orderId = orderId });
         }
@@ -225,7 +227,10 @@ namespace Grand.Web.Controllers
             if (order == null || order.Deleted || _workContext.CurrentCustomer.Id != order.CustomerId)
                 return Challenge();
 
-            await _mediator.Send(new InsertOrderNoteCommandModel() { OrderNote = model, Language = _workContext.WorkingLanguage });
+            await _mediator.Send(new InsertOrderNoteCommand() { Order = order, OrderNote = model, Language = _workContext.WorkingLanguage });
+
+            //notification
+            await _mediator.Publish(new OrderNoteEvent(order, model));
 
             AddNotification(Framework.UI.NotifyType.Success, _localizationService.GetResource("OrderNote.Added"), true);
             return RedirectToRoute("OrderDetails", new { orderId = model.OrderId });
@@ -238,7 +243,10 @@ namespace Grand.Web.Controllers
             if (order == null || order.Deleted || _workContext.CurrentCustomer.Id != order.CustomerId)
                 return Challenge();
 
-            await _orderProcessingService.ReOrder(order);
+            var warnings = await _mediator.Send(new ReOrderCommand() { Order = order });
+            if(warnings.Any())
+                AddNotification(Framework.UI.NotifyType.Error, string.Join(",", warnings), true);
+
             return RedirectToRoute("ShoppingCart");
         }
 
@@ -255,8 +263,7 @@ namespace Grand.Web.Controllers
             if (!await _paymentService.CanRePostProcessPayment(order))
                 return RedirectToRoute("OrderDetails", new { orderId = orderId });
 
-            var postProcessPaymentRequest = new PostProcessPaymentRequest
-            {
+            var postProcessPaymentRequest = new PostProcessPaymentRequest {
                 Order = order
             };
             await _paymentService.PostProcessPayment(postProcessPaymentRequest);
@@ -283,12 +290,12 @@ namespace Grand.Web.Controllers
             if (order == null || order.Deleted || _workContext.CurrentCustomer.Id != order.CustomerId)
                 return Challenge();
 
-            var model = await _mediator.Send(new GetShipmentDetails() { 
+            var model = await _mediator.Send(new GetShipmentDetails() {
                 Customer = _workContext.CurrentCustomer,
                 Language = _workContext.WorkingLanguage,
                 Order = order,
                 Shipment = shipment
-            }); 
+            });
 
             return View(model);
         }

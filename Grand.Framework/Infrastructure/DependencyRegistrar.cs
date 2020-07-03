@@ -169,8 +169,9 @@ namespace Grand.Framework.Infrastructure
             if (dataProviderSettings != null && dataProviderSettings.IsValid())
             {
                 var connectionString = dataProviderSettings.DataConnectionString;
-                var databaseName = new MongoUrl(connectionString).DatabaseName;
-                builder.Register(c => new MongoClient(connectionString).GetDatabase(databaseName)).SingleInstance();
+                var mongourl = new MongoUrl(connectionString);
+                var databaseName = mongourl.DatabaseName;
+                builder.Register(c => new MongoClient(mongourl).GetDatabase(databaseName)).InstancePerLifetimeScope();
                 builder.Register<IMongoDBContext>(c => new MongoDBContext(connectionString)).InstancePerLifetimeScope();
             }
             else
@@ -185,7 +186,6 @@ namespace Grand.Framework.Infrastructure
 
         private void RegisterCache(ContainerBuilder builder, GrandConfig config)
         {
-            builder.RegisterType<PerRequestCacheManager>().InstancePerLifetimeScope();
             builder.RegisterType<MemoryCacheManager>().As<ICacheManager>().SingleInstance();
             if (config.RedisPubSubEnabled)
             {
@@ -253,6 +253,7 @@ namespace Grand.Framework.Infrastructure
             builder.RegisterType<ProductAttributeParser>().As<IProductAttributeParser>().InstancePerLifetimeScope();
             builder.RegisterType<ProductAttributeService>().As<IProductAttributeService>().InstancePerLifetimeScope();
             builder.RegisterType<ProductService>().As<IProductService>().InstancePerLifetimeScope();
+            builder.RegisterType<ProductReviewService>().As<IProductReviewService>().InstancePerLifetimeScope();
             builder.RegisterType<CopyProductService>().As<ICopyProductService>().InstancePerLifetimeScope();
             builder.RegisterType<ProductReservationService>().As<IProductReservationService>().InstancePerLifetimeScope();
             builder.RegisterType<AuctionService>().As<IAuctionService>().InstancePerLifetimeScope();
@@ -288,6 +289,7 @@ namespace Grand.Framework.Infrastructure
             builder.RegisterType<CustomerActionService>().As<ICustomerActionService>().InstancePerLifetimeScope();
             builder.RegisterType<CustomerActionEventService>().As<ICustomerActionEventService>().InstancePerLifetimeScope();
             builder.RegisterType<CustomerReminderService>().As<ICustomerReminderService>().InstancePerLifetimeScope();
+            builder.RegisterType<CustomerProductService>().As<ICustomerProductService>().InstancePerLifetimeScope();
             builder.RegisterType<UserApiService>().As<IUserApiService>().InstancePerLifetimeScope();
 
         }
@@ -340,6 +342,7 @@ namespace Grand.Framework.Infrastructure
             if (!databaseInstalled)
             {
                 //installation service
+                builder.RegisterType<InstallationLocalizationService>().As<IInstallationLocalizationService>().InstancePerLifetimeScope();
                 builder.RegisterType<CodeFirstInstallationService>().As<IInstallationService>().InstancePerLifetimeScope();
             }
             else

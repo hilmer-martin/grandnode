@@ -1,6 +1,6 @@
 ﻿using Grand.Core;
 using Grand.Core.Caching;
-using Grand.Core.Data;
+using Grand.Core.Configuration;
 using Grand.Core.Domain;
 using Grand.Core.Domain.AdminSearch;
 using Grand.Core.Domain.Blogs;
@@ -28,6 +28,8 @@ using Grand.Framework.Mvc.Filters;
 using Grand.Framework.Security.Authorization;
 using Grand.Framework.Security.Captcha;
 using Grand.Framework.Themes;
+using Grand.Services.Commands.Models.Common;
+using Grand.Services.Commands.Models.Orders;
 using Grand.Services.Common;
 using Grand.Services.Configuration;
 using Grand.Services.Customers;
@@ -44,16 +46,15 @@ using Grand.Web.Areas.Admin.Extensions;
 using Grand.Web.Areas.Admin.Models.Common;
 using Grand.Web.Areas.Admin.Models.PushNotifications;
 using Grand.Web.Areas.Admin.Models.Settings;
+using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
-using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Driver;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Threading.Tasks;
-using Grand.Core.Configuration;
 
 namespace Grand.Web.Areas.Admin.Controllers
 {
@@ -79,11 +80,10 @@ namespace Grand.Web.Areas.Admin.Controllers
         private readonly IStoreService _storeService;
         private readonly IWorkContext _workContext;
         private readonly IGenericAttributeService _genericAttributeService;
-        private readonly IRepository<Product> _productRepository;
+        private readonly IMediator _mediator;
         private readonly IReturnRequestService _returnRequestService;
         private readonly ILanguageService _languageService;
         private readonly ICacheManager _cacheManager;
-        private readonly IServiceProvider _serviceProvider;
 
         #endregion
 
@@ -106,11 +106,10 @@ namespace Grand.Web.Areas.Admin.Controllers
             IStoreService storeService,
             IWorkContext workContext,
             IGenericAttributeService genericAttributeService,
-            IRepository<Product> productRepository,
+            IMediator mediator,
             IReturnRequestService returnRequestService,
             ILanguageService languageService,
-            ICacheManager cacheManager,
-            IServiceProvider serviceProvider)
+            ICacheManager cacheManager)
         {
             _settingService = settingService;
             _countryService = countryService;
@@ -129,11 +128,10 @@ namespace Grand.Web.Areas.Admin.Controllers
             _storeService = storeService;
             _workContext = workContext;
             _genericAttributeService = genericAttributeService;
-            _productRepository = productRepository;
+            _mediator = mediator;
             _returnRequestService = returnRequestService;
             _languageService = languageService;
             _cacheManager = cacheManager;
-            _serviceProvider = serviceProvider;
         }
 
         #endregion
@@ -941,12 +939,15 @@ namespace Grand.Web.Areas.Admin.Controllers
                 model.PointsForPurchases_OverrideForStore = _settingService.SettingExists(rewardPointsSettings, x => x.PointsForPurchases_Amount, storeScope) ||
                     _settingService.SettingExists(rewardPointsSettings, x => x.PointsForPurchases_Points, storeScope);
                 model.PointsForPurchases_Awarded_OverrideForStore = _settingService.SettingExists(rewardPointsSettings, x => x.PointsForPurchases_Awarded, storeScope);
-                model.PointsForPurchases_Canceled_OverrideForStore = _settingService.SettingExists(rewardPointsSettings, x => x.PointsForPurchases_Canceled, storeScope);
+                model.ReduceRewardPointsAfterCancelOrder_OverrideForStore = _settingService.SettingExists(rewardPointsSettings, x => x.ReduceRewardPointsAfterCancelOrder, storeScope);
                 model.DisplayHowMuchWillBeEarned_OverrideForStore = _settingService.SettingExists(rewardPointsSettings, x => x.DisplayHowMuchWillBeEarned, storeScope);
                 model.PointsForRegistration_OverrideForStore = _settingService.SettingExists(rewardPointsSettings, x => x.PointsForRegistration, storeScope);
             }
             var currencySettings = _settingService.LoadSetting<CurrencySettings>(storeScope);
             model.PrimaryStoreCurrencyCode = (await _currencyService.GetCurrencyById(currencySettings.PrimaryStoreCurrencyId)).CurrencyCode;
+
+            //order statuses
+            model.PointsForPurchases_Awarded_OrderStatuses = OrderStatus.Pending.ToSelectList(HttpContext, false, new int[] { 10, 40 }).ToList();
 
             return View(model);
         }
@@ -977,7 +978,7 @@ namespace Grand.Web.Areas.Admin.Controllers
                 }
 
                 await UpdateOverrideForStore(storeScope, model.PointsForPurchases_Awarded_OverrideForStore, rewardPointsSettings, x => x.PointsForPurchases_Awarded);
-                await UpdateOverrideForStore(storeScope, model.PointsForPurchases_Canceled_OverrideForStore, rewardPointsSettings, x => x.PointsForPurchases_Canceled);
+                await UpdateOverrideForStore(storeScope, model.ReduceRewardPointsAfterCancelOrder_OverrideForStore, rewardPointsSettings, x => x.ReduceRewardPointsAfterCancelOrder);
                 await UpdateOverrideForStore(storeScope, model.DisplayHowMuchWillBeEarned_OverrideForStore, rewardPointsSettings, x => x.DisplayHowMuchWillBeEarned);
 
                 await _settingService.SaveSetting(rewardPointsSettings, x => x.PointsAccumulatedForAllStores, "", false);
@@ -1036,11 +1037,7 @@ namespace Grand.Web.Areas.Admin.Controllers
             model.GiftCards_Activated_OrderStatuses.Insert(0, new SelectListItem { Text = "---", Value = "0" });
 
             //order ident
-            var orderRepository = _serviceProvider.GetRequiredService<IRepository<Order>>();
-            int maxOrderNumber = 0;
-            if (orderRepository.Table.Count() > 0)
-                maxOrderNumber = orderRepository.Table.Max(x => x.OrderNumber);
-            model.OrderIdent = maxOrderNumber;
+            model.OrderIdent = await _mediator.Send(new MaxOrderNumberCommand());
 
             return View(model);
         }
@@ -1084,16 +1081,9 @@ namespace Grand.Web.Areas.Admin.Controllers
                 await ClearCache();
 
                 //order ident
-                if (model.OrderIdent > 0)
+                if (model.OrderIdent.HasValue && model.OrderIdent.Value > 0)
                 {
-                    var orderRepository = _serviceProvider.GetRequiredService<IRepository<Order>>();
-                    int maxOrderNumber = 0;
-                    if (orderRepository.Table.Count() > 0)
-                        maxOrderNumber = orderRepository.Table.Max(x => x.OrderNumber);
-                    if (model.OrderIdent > maxOrderNumber)
-                    {
-                        orderRepository.Insert(new Order() { OrderNumber = model.OrderIdent.Value, Deleted = true, CreatedOnUtc = DateTime.UtcNow });
-                    }
+                    model.OrderIdent = await _mediator.Send(new MaxOrderNumberCommand() { OrderNumber = model.OrderIdent });
                 }
 
                 //activity log
@@ -1142,6 +1132,7 @@ namespace Grand.Web.Areas.Admin.Controllers
                 model.MiniShoppingCartProductNumber_OverrideForStore = _settingService.SettingExists(shoppingCartSettings, x => x.MiniShoppingCartProductNumber, storeScope);
                 model.AllowCartItemEditing_OverrideForStore = _settingService.SettingExists(shoppingCartSettings, x => x.AllowCartItemEditing, storeScope);
                 model.CartsSharedBetweenStores_OverrideForStore = _settingService.SettingExists(shoppingCartSettings, x => x.CartsSharedBetweenStores, storeScope);
+                model.AllowOnHoldCart_OverrideForStore = _settingService.SettingExists(shoppingCartSettings, x => x.AllowOnHoldCart, storeScope);
             }
             return View(model);
         }
@@ -1171,6 +1162,7 @@ namespace Grand.Web.Areas.Admin.Controllers
             await UpdateOverrideForStore(storeScope, model.MiniShoppingCartProductNumber_OverrideForStore, shoppingCartSettings, x => x.MiniShoppingCartProductNumber);
             await UpdateOverrideForStore(storeScope, model.AllowCartItemEditing_OverrideForStore, shoppingCartSettings, x => x.AllowCartItemEditing);
             await UpdateOverrideForStore(storeScope, model.CartsSharedBetweenStores_OverrideForStore, shoppingCartSettings, x => x.CartsSharedBetweenStores);
+            await UpdateOverrideForStore(storeScope, model.AllowOnHoldCart_OverrideForStore, shoppingCartSettings, x => x.AllowOnHoldCart);
 
             //now clear cache
             await ClearCache();
@@ -1400,7 +1392,8 @@ namespace Grand.Web.Areas.Admin.Controllers
                 model.DefaultImageQuality_OverrideForStore = _settingService.SettingExists(mediaSettings, x => x.DefaultImageQuality, storeScope);
 
             }
-            model.PicturesStoredIntoDatabase = _pictureService.StoreInDb;
+            var mediaStoreSetting = _settingService.LoadSetting<MediaSettings>("");
+            model.PicturesStoredIntoDatabase = mediaStoreSetting.StoreInDb;
             return View(model);
         }
         [HttpPost]
@@ -1440,15 +1433,15 @@ namespace Grand.Web.Areas.Admin.Controllers
         }
         [HttpPost, ActionName("Media")]
         [FormValueRequired("change-picture-storage")]
-        public async Task<IActionResult> ChangePictureStorage([FromServices] IRepository<Picture> pictureRepository)
+        public async Task<IActionResult> ChangePictureStorage([FromServices] MediaSettings mediaSettings)
         {
-            var storeIdDb = !_pictureService.StoreInDb;
+            var storeIdDb = !mediaSettings.StoreInDb;
 
             //save the new setting value
-            await _settingService.SetSetting("Media.Images.StoreInDB", storeIdDb);
+            await _settingService.SetSetting("MediaSettings.StoreInDb", storeIdDb, "");
 
             int pageIndex = 0;
-            const int pageSize = 400;
+            const int pageSize = 100;
             try
             {
                 while (true)
@@ -1468,9 +1461,9 @@ namespace Grand.Web.Areas.Admin.Controllers
                             _pictureService.SavePictureInFile(picture.Id, pictureBinary, picture.MimeType);
                         picture.PictureBinary = storeIdDb ? pictureBinary : new byte[0];
                         picture.IsNew = true;
+
+                        await _pictureService.UpdatePicture(picture);
                     }
-                    //save all at once
-                    pictureRepository.Update(pictures);
                 }
             }
             finally
@@ -1658,6 +1651,7 @@ namespace Grand.Web.Areas.Admin.Controllers
             model.SecuritySettings.CaptchaEnabled = captchaSettings.Enabled;
             model.SecuritySettings.CaptchaShowOnLoginPage = captchaSettings.ShowOnLoginPage;
             model.SecuritySettings.CaptchaShowOnRegistrationPage = captchaSettings.ShowOnRegistrationPage;
+            model.SecuritySettings.CaptchaShowOnPasswordRecoveryPage = captchaSettings.ShowOnPasswordRecoveryPage;
             model.SecuritySettings.CaptchaShowOnContactUsPage = captchaSettings.ShowOnContactUsPage;
             model.SecuritySettings.CaptchaShowOnEmailWishlistToFriendPage = captchaSettings.ShowOnEmailWishlistToFriendPage;
             model.SecuritySettings.CaptchaShowOnEmailProductToFriendPage = captchaSettings.ShowOnEmailProductToFriendPage;
@@ -1692,11 +1686,9 @@ namespace Grand.Web.Areas.Admin.Controllers
             //localization
             var localizationSettings = _settingService.LoadSetting<LocalizationSettings>(storeScope);
             model.LocalizationSettings.UseImagesForLanguageSelection = localizationSettings.UseImagesForLanguageSelection;
-            model.LocalizationSettings.SeoFriendlyUrlsForLanguagesEnabled = localizationSettings.SeoFriendlyUrlsForLanguagesEnabled;
             model.LocalizationSettings.AutomaticallyDetectLanguage = localizationSettings.AutomaticallyDetectLanguage;
             model.LocalizationSettings.LoadAllLocaleRecordsOnStartup = localizationSettings.LoadAllLocaleRecordsOnStartup;
             model.LocalizationSettings.LoadAllLocalizedPropertiesOnStartup = localizationSettings.LoadAllLocalizedPropertiesOnStartup;
-            model.LocalizationSettings.LoadAllUrlRecordsOnStartup = localizationSettings.LoadAllUrlRecordsOnStartup;
 
             //full-text support
             model.FullTextSettings.Supported = true;
@@ -1807,7 +1799,7 @@ namespace Grand.Web.Areas.Admin.Controllers
             seoSettings.TwitterMetaTags = model.SeoSettings.TwitterMetaTags;
             seoSettings.OpenGraphMetaTags = model.SeoSettings.OpenGraphMetaTags;
 
-            
+
             await UpdateOverrideForStore(storeScope, model.SeoSettings.PageTitleSeparator_OverrideForStore, seoSettings, x => x.PageTitleSeparator);
             await UpdateOverrideForStore(storeScope, model.SeoSettings.PageTitleSeoAdjustment_OverrideForStore, seoSettings, x => x.PageTitleSeoAdjustment);
             await UpdateOverrideForStore(storeScope, model.SeoSettings.DefaultTitle_OverrideForStore, seoSettings, x => x.DefaultTitle);
@@ -1839,6 +1831,7 @@ namespace Grand.Web.Areas.Admin.Controllers
             captchaSettings.Enabled = model.SecuritySettings.CaptchaEnabled;
             captchaSettings.ShowOnLoginPage = model.SecuritySettings.CaptchaShowOnLoginPage;
             captchaSettings.ShowOnRegistrationPage = model.SecuritySettings.CaptchaShowOnRegistrationPage;
+            captchaSettings.ShowOnPasswordRecoveryPage = model.SecuritySettings.CaptchaShowOnPasswordRecoveryPage;
             captchaSettings.ShowOnContactUsPage = model.SecuritySettings.CaptchaShowOnContactUsPage;
             captchaSettings.ShowOnEmailWishlistToFriendPage = model.SecuritySettings.CaptchaShowOnEmailWishlistToFriendPage;
             captchaSettings.ShowOnAskQuestionPage = model.SecuritySettings.CaptchaShowOnAskQuestionPage;
@@ -1866,7 +1859,7 @@ namespace Grand.Web.Areas.Admin.Controllers
             pdfSettings.DisablePdfInvoicesForPendingOrders = model.PdfSettings.DisablePdfInvoicesForPendingOrders;
             pdfSettings.InvoiceFooterTextColumn1 = model.PdfSettings.InvoiceFooterTextColumn1;
             pdfSettings.InvoiceFooterTextColumn2 = model.PdfSettings.InvoiceFooterTextColumn2;
-           
+
             await UpdateOverrideForStore(storeScope, model.PdfSettings.LetterPageSizeEnabled_OverrideForStore, pdfSettings, x => x.LetterPageSizeEnabled);
             await UpdateOverrideForStore(storeScope, model.PdfSettings.LogoPictureId_OverrideForStore, pdfSettings, x => x.LogoPictureId);
             await UpdateOverrideForStore(storeScope, model.PdfSettings.DisablePdfInvoicesForPendingOrders_OverrideForStore, pdfSettings, x => x.DisablePdfInvoicesForPendingOrders);
@@ -1876,14 +1869,9 @@ namespace Grand.Web.Areas.Admin.Controllers
             //localization settings
             var localizationSettings = _settingService.LoadSetting<LocalizationSettings>(storeScope);
             localizationSettings.UseImagesForLanguageSelection = model.LocalizationSettings.UseImagesForLanguageSelection;
-            if (localizationSettings.SeoFriendlyUrlsForLanguagesEnabled != model.LocalizationSettings.SeoFriendlyUrlsForLanguagesEnabled)
-            {
-                localizationSettings.SeoFriendlyUrlsForLanguagesEnabled = model.LocalizationSettings.SeoFriendlyUrlsForLanguagesEnabled;
-            }
             localizationSettings.AutomaticallyDetectLanguage = model.LocalizationSettings.AutomaticallyDetectLanguage;
             localizationSettings.LoadAllLocaleRecordsOnStartup = model.LocalizationSettings.LoadAllLocaleRecordsOnStartup;
             localizationSettings.LoadAllLocalizedPropertiesOnStartup = model.LocalizationSettings.LoadAllLocalizedPropertiesOnStartup;
-            localizationSettings.LoadAllUrlRecordsOnStartup = model.LocalizationSettings.LoadAllUrlRecordsOnStartup;
             await _settingService.SaveSetting(localizationSettings);
 
             //full-text
@@ -1972,7 +1960,7 @@ namespace Grand.Web.Areas.Admin.Controllers
                 model.SecuritySettings.EncryptionKey = model.SecuritySettings.EncryptionKey.Trim();
 
                 var newEncryptionPrivateKey = model.SecuritySettings.EncryptionKey;
-                if (String.IsNullOrEmpty(newEncryptionPrivateKey) || newEncryptionPrivateKey.Length != 16)
+                if (String.IsNullOrEmpty(newEncryptionPrivateKey) || newEncryptionPrivateKey.Length != 24)
                     throw new GrandException(_localizationService.GetResource("Admin.Configuration.Settings.GeneralCommon.EncryptionKey.TooShort"));
 
                 string oldEncryptionPrivateKey = securitySettings.EncryptionKey;
@@ -2046,16 +2034,14 @@ namespace Grand.Web.Areas.Admin.Controllers
             {
                 if (commonSettings.UseFullTextSearch)
                 {
-                    _productRepository.Collection.Indexes.DropOne("ProductText");
+                    await _mediator.Send(new UseFullTextSearchCommand() { UseFullTextSearch = false });
                     commonSettings.UseFullTextSearch = false;
                     await _settingService.SaveSetting(commonSettings);
                     SuccessNotification(_localizationService.GetResource("Admin.Configuration.Settings.GeneralCommon.FullTextSettings.Disabled"));
                 }
                 else
                 {
-                    var indexOption = new CreateIndexOptions() { Name = "ProductText" };
-                    indexOption.Collation = new Collation("simple");
-                    _productRepository.Collection.Indexes.CreateOne(new CreateIndexModel<Product>((Builders<Product>.IndexKeys.Text("$**")), indexOption));
+                    await _mediator.Send(new UseFullTextSearchCommand() { UseFullTextSearch = true });
                     commonSettings.UseFullTextSearch = true;
                     await _settingService.SaveSetting(commonSettings);
                     SuccessNotification(_localizationService.GetResource("Admin.Configuration.Settings.GeneralCommon.FullTextSettings.Enabled"));
@@ -2089,7 +2075,7 @@ namespace Grand.Web.Areas.Admin.Controllers
                 else
                 {
                     var store = await _storeService.GetStoreById(x.StoreId);
-                    storeName = store != null ? store.Name : "Unknown";
+                    storeName = store != null ? store.Shortcut : "Unknown";
                 }
                 var settingModel = new SettingModel {
                     Id = x.Id,

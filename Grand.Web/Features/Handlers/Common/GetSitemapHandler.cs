@@ -4,16 +4,20 @@ using Grand.Core.Domain.Common;
 using Grand.Core.Domain.Forums;
 using Grand.Core.Domain.Knowledgebase;
 using Grand.Core.Domain.News;
+using Grand.Services.Blogs;
 using Grand.Services.Catalog;
 using Grand.Services.Customers;
+using Grand.Services.Knowledgebase;
 using Grand.Services.Localization;
 using Grand.Services.Seo;
 using Grand.Services.Topics;
 using Grand.Web.Extensions;
 using Grand.Web.Features.Models.Common;
 using Grand.Web.Infrastructure.Cache;
+using Grand.Web.Models.Blogs;
 using Grand.Web.Models.Catalog;
 using Grand.Web.Models.Common;
+using Grand.Web.Models.Knowledgebase;
 using Grand.Web.Models.Topics;
 using MediatR;
 using System.Linq;
@@ -29,6 +33,8 @@ namespace Grand.Web.Features.Handlers.Common
         private readonly IManufacturerService _manufacturerService;
         private readonly IProductService _productService;
         private readonly ITopicService _topicService;
+        private readonly IBlogService _blogService;
+        private readonly IKnowledgebaseService _knowledgebaseService;
 
         private readonly CommonSettings _commonSettings;
         private readonly BlogSettings _blogSettings;
@@ -41,6 +47,8 @@ namespace Grand.Web.Features.Handlers.Common
             IManufacturerService manufacturerService,
             IProductService productService,
             ITopicService topicService,
+            IBlogService blogService,
+            IKnowledgebaseService knowledgebaseService,
             CommonSettings commonSettings,
             BlogSettings blogSettings,
             ForumSettings forumSettings,
@@ -52,6 +60,8 @@ namespace Grand.Web.Features.Handlers.Common
             _manufacturerService = manufacturerService;
             _productService = productService;
             _topicService = topicService;
+            _blogService = blogService;
+            _knowledgebaseService = knowledgebaseService;
 
             _commonSettings = commonSettings;
             _blogSettings = blogSettings;
@@ -113,8 +123,25 @@ namespace Grand.Web.Features.Handlers.Common
                     IncludeInSitemap = topic.IncludeInSitemap,
                     IsPasswordProtected = topic.IsPasswordProtected,
                     Title = topic.GetLocalized(x => x.Title, request.Language.Id),
-                })
-                .ToList();
+                }).ToList();
+
+                //blog posts
+                var blogposts = (await _blogService.GetAllBlogPosts(request.Store.Id))
+                    .ToList();
+                model.BlogPosts = blogposts.Select(blogpost => new BlogPostModel {
+                    Id = blogpost.Id,
+                    SeName = blogpost.GetSeName(request.Language.Id),
+                    Title = blogpost.GetLocalized(x => x.Title, request.Language.Id),
+                }).ToList();
+
+                //knowledgebase
+                var knowledgebasearticles = (await _knowledgebaseService.GetPublicKnowledgebaseArticles()).ToList();
+                model.KnowledgebaseArticles = knowledgebasearticles.Select(knowledgebasearticle => new KnowledgebaseItemModel {
+                    Id = knowledgebasearticle.Id,
+                    SeName = knowledgebasearticle.GetSeName(request.Language.Id),
+                    Name = knowledgebasearticle.GetLocalized(x => x.Name, request.Language.Id)
+                }).ToList();
+
                 return model;
             });
             return cachedModel;

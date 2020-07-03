@@ -16,7 +16,6 @@ using System.Threading.Tasks;
 using MongoDB.Driver;
 using MongoDB.Driver.Linq;
 using Grand.Core.Caching;
-using System.Collections.Generic;
 
 namespace Grand.Services.Media
 {
@@ -264,7 +263,7 @@ namespace Grand.Services.Media
         /// <param name="binary">Picture binary</param>
         protected virtual Task SaveThumb(string thumbFilePath, string thumbFileName, byte[] binary)
         {
-            File.WriteAllBytes(thumbFilePath, binary);
+            File.WriteAllBytes(thumbFilePath, binary ?? new byte[0]);
             return Task.CompletedTask;
         }
 
@@ -280,7 +279,7 @@ namespace Grand.Services.Media
         /// <returns>Picture binary</returns>
         public virtual async Task<byte[]> LoadPictureBinary(Picture picture)
         {
-            return await LoadPictureBinary(picture, StoreInDb);
+            return await LoadPictureBinary(picture, _mediaSettings.StoreInDb);
         }
 
         /// <summary>
@@ -374,7 +373,7 @@ namespace Grand.Services.Media
             string storeLocation = null,
             PictureType defaultPictureType = PictureType.Entity)
         {
-            var pictureKey = string.Format(PICTURE_BY_KEY, pictureId, _storeContext.CurrentStore.Id, targetSize, showDefaultPicture, storeLocation, defaultPictureType);
+            var pictureKey = string.Format(PICTURE_BY_KEY, pictureId, _storeContext.CurrentStore?.Id, targetSize, showDefaultPicture, storeLocation, defaultPictureType);
             return await _cacheManager.GetAsync(pictureKey, async () =>
             {
                 var picture = await GetPictureById(pictureId);
@@ -464,9 +463,16 @@ namespace Grand.Services.Media
                 using (var mutex = new Mutex(false, thumbFileName))
                 {
                     mutex.WaitOne();
-                    using (var image = SKBitmap.Decode(pictureBinary))
+                    if (pictureBinary != null)
                     {
-                        pictureBinary = ApplyResize(image, EncodedImageFormat(picture.MimeType), targetSize);
+                        try
+                        {
+                            using (var image = SKBitmap.Decode(pictureBinary))
+                            {
+                                pictureBinary = ApplyResize(image, EncodedImageFormat(picture.MimeType), targetSize);
+                            }
+                        }
+                        catch { }
                     }
                     await SaveThumb(thumbFilePath, thumbFileName, pictureBinary);
 
@@ -522,7 +528,7 @@ namespace Grand.Services.Media
             await DeletePictureThumbs(picture);
 
             //delete from file system
-            if (!StoreInDb)
+            if (!_mediaSettings.StoreInDb)
                 DeletePictureOnFileSystem(picture);
 
             //delete from database
@@ -616,7 +622,7 @@ namespace Grand.Services.Media
                 pictureBinary = ValidatePicture(pictureBinary, mimeType);
 
             var picture = new Picture {
-                PictureBinary = this.StoreInDb ? pictureBinary : new byte[0],
+                PictureBinary = _mediaSettings.StoreInDb ? pictureBinary : new byte[0],
                 MimeType = mimeType,
                 SeoFilename = seoFilename,
                 AltAttribute = altAttribute,
@@ -625,7 +631,7 @@ namespace Grand.Services.Media
             };
             await _pictureRepository.InsertAsync(picture);
 
-            if (!StoreInDb)
+            if (!_mediaSettings.StoreInDb)
                 SavePictureInFile(picture.Id, pictureBinary, mimeType);
 
             //event notification
@@ -666,7 +672,7 @@ namespace Grand.Services.Media
             if (seoFilename != picture.SeoFilename)
                 await DeletePictureThumbs(picture);
 
-            picture.PictureBinary = StoreInDb ? pictureBinary : new byte[0];
+            picture.PictureBinary = _mediaSettings.StoreInDb ? pictureBinary : new byte[0];
             picture.MimeType = mimeType;
             picture.SeoFilename = seoFilename;
             picture.AltAttribute = altAttribute;
@@ -675,8 +681,26 @@ namespace Grand.Services.Media
 
             await _pictureRepository.UpdateAsync(picture);
 
-            if (!StoreInDb)
+            if (!_mediaSettings.StoreInDb)
                 SavePictureInFile(picture.Id, pictureBinary, mimeType);
+
+            //event notification
+            await _mediator.EntityUpdated(picture);
+
+            return picture;
+        }
+
+        /// <summary>
+        /// Updates the picture
+        /// </summary>
+        /// <param name="picture">Picture</param>
+        /// <returns>Picture</returns>
+        public virtual async Task<Picture> UpdatePicture(Picture picture)
+        {
+            if (picture == null)
+                throw new ArgumentNullException("picture");
+
+            await _pictureRepository.UpdateAsync(picture);
 
             //event notification
             await _mediator.EntityUpdated(picture);
@@ -841,17 +865,5 @@ namespace Grand.Services.Media
 
         #endregion
 
-        #region Properties
-
-        /// <summary>
-        /// Gets or sets a value indicating whether the images should be stored in data base.
-        /// </summary>
-        public virtual bool StoreInDb {
-            get {
-                return _settingService.GetSettingByKey("Media.Images.StoreInDB", true);
-            }
-        }
-
-        #endregion
     }
 }

@@ -15,16 +15,6 @@ namespace Grand.Core.Domain.Localization
         public bool UseImagesForLanguageSelection { get; set; }
 
         /// <summary>
-        /// A value indicating whether SEO friendly URLs with multiple languages are enabled
-        /// </summary>
-        public bool SeoFriendlyUrlsForLanguagesEnabled { get; set; }
-
-        /// <summary>
-        /// A value indicating whether SEO friendly URLs for path are enabled
-        /// </summary>
-        public bool SeoFriendlyUrlsForPathEnabled { get; set; }
-
-        /// <summary>
         /// A value indicating whether we should detect the current language by a customer region (browser settings)
         /// </summary>
         public bool AutomaticallyDetectLanguage { get; set; }
@@ -38,12 +28,7 @@ namespace Grand.Core.Domain.Localization
         /// A value indicating whether to load all LocalizedProperty records on application startup
         /// </summary>
         public bool LoadAllLocalizedPropertiesOnStartup { get; set; }
-
-        /// <summary>
-        /// A value indicating whether to load all search engine friendly names (slugs) on application startup
-        /// </summary>
-        public bool LoadAllUrlRecordsOnStartup { get; set; }
-
+        
         /// <summary>
         /// A value indicating whether to we should ignore RTL language property for admin area
         /// </summary>

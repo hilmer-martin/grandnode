@@ -67,6 +67,7 @@ namespace Grand.Services.Orders.Tests
         private AddressSettings _addressSettings;
         private IVendorService _vendorService;
         private ICustomerService _customerService;
+        private ICustomerProductService _customerProductService;
         private ICurrencyService _currencyService;
         private IServiceProvider _serviceProvider;
         private IStateProvinceService _stateProvinceService;
@@ -108,10 +109,11 @@ namespace Grand.Services.Orders.Tests
             _shoppingCartSettings = new ShoppingCartSettings();
             _catalogSettings = new CatalogSettings();
             _customerService = new Mock<ICustomerService>().Object;
+            _customerProductService = new Mock<ICustomerProductService>().Object;
 
             _priceCalcService = new PriceCalculationService(_workContext, _storeContext,
                 _discountService, _categoryService,
-                _manufacturerService, _productAttributeParser, _productService, _customerService,
+                _manufacturerService, _productAttributeParser, _productService, _customerProductService,
                 _vendorService, _currencyService,
                 _shoppingCartSettings, _catalogSettings);
 
@@ -154,11 +156,9 @@ namespace Grand.Services.Orders.Tests
             _countryService,
             _stateProvinceService,
             pluginFinder,
-            _storeContext,
             _eventPublisher,
             _currencyService,
             cacheManager,
-            null,
             _shoppingCartSettings,
             _shippingSettings);
 
@@ -171,14 +171,13 @@ namespace Grand.Services.Orders.Tests
                 _addressService = tempAddressService.Object;
             }
 
-            _taxService = new TaxService(_addressService, _workContext, _taxSettings,
-                pluginFinder, _geoLookupService, _countryService, _serviceProvider, _logger, _customerSettings, _addressSettings);
+            _taxService = new TaxService(_addressService, _workContext, pluginFinder, _geoLookupService, _countryService, _logger, _taxSettings, _customerSettings, _addressSettings);
 
             _rewardPointsSettings = new RewardPointsSettings();
 
             _orderTotalCalcService = new OrderTotalCalculationService(_workContext, _storeContext,
                 _priceCalcService, _taxService, _shippingService, _paymentService,
-                _checkoutAttributeParser, _discountService, _giftCardService, _genericAttributeService,
+                _checkoutAttributeParser, _discountService, _giftCardService,
                 null, _productService, _currencyService, _taxSettings, _rewardPointsSettings,
                 _shippingSettings, _shoppingCartSettings, _catalogSettings);
         }
